@@ -1,0 +1,90 @@
+require 'json'
+
+EMCC_FLAGS = ENV["EMCC_FLAGS"] || "-O3 -D_ERROR_PRINT -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -lm"
+
+EMCC_FLAGS = "-O0 -g4 -D_ASSERT_USED -D_ERROR_PRINT -s ALLOW_MEMORY_GROWTH=1 -s WASM=1" if ENV["DEBUG"]
+
+CFLAGS = "-I../ffmpeg-src/ -O2 -w -std=c99 -Wno-implicit-function-declaration"
+
+c_files = FileList["../ffmpeg-src/libavcodec/videodsp.c",
+                   "../ffmpeg-src/libavcodec/h264_picture.c",
+                   "../ffmpeg-src/libavcodec/simple_idct.c",
+                   "../ffmpeg-src/libavcodec/h2645_parse.c",
+                   "../ffmpeg-src/libavcodec/avpacket.c",
+                   "../ffmpeg-src/libavcodec/h264_refs.c",
+                   "../ffmpeg-src/libavcodec/mathtables.c",
+                   "../ffmpeg-src/libavcodec/bitstream.c",
+                   "../ffmpeg-src/libavcodec/h264_ps.c",
+                   "../ffmpeg-src/libavcodec/utils.c",
+                   "../ffmpeg-src/libavcodec/codec_desc.c",
+                   "../ffmpeg-src/libavcodec/parser.c",
+                   "../ffmpeg-src/libavcodec/h264idct.c",
+                   "../ffmpeg-src/libavcodec/startcode.c",
+                   "../ffmpeg-src/libavcodec/h264_slice.c",
+                   "../ffmpeg-src/libavcodec/h264_mb.c",
+                   "../ffmpeg-src/libavcodec/h264.c",
+                   "../ffmpeg-src/libavcodec/error_resilience.c",
+                   "../ffmpeg-src/libavcodec/h264_loopfilter.c",
+                   "../ffmpeg-src/libavcodec/profiles.c",
+                   "../ffmpeg-src/libavcodec/cabac.c",
+                   "../ffmpeg-src/libavcodec/h264_sei.c",
+                   "../ffmpeg-src/libavcodec/h264_cabac.c",
+                   "../ffmpeg-src/libavcodec/h264data.c",
+                   "../ffmpeg-src/libavcodec/h264dsp.c",
+                   "../ffmpeg-src/libavcodec/h264pred.c",
+                   "../ffmpeg-src/libavcodec/h264_parser.c",
+                   "../ffmpeg-src/libavcodec/h264_cavlc.c",
+                   "../ffmpeg-src/libavcodec/h264chroma.c",
+                   "../ffmpeg-src/libavcodec/golomb.c",
+                   "../ffmpeg-src/libavcodec/me_cmp.c",
+                   "../ffmpeg-src/libavcodec/options.c",
+                   "../ffmpeg-src/libavcodec/h264_direct.c",
+                   "../ffmpeg-src/libavcodec/h264qpel.c",
+                   "../ffmpeg-src/libavcodec/h264_parse.c",
+                    "../ffmpeg-src/libavutil/*.c",
+                    "h264bsd_decoder.c"]
+
+
+exported_functions = [
+	"_malloc",
+	"_free",
+	"_memcpy",
+	"_h264bsdAlloc",
+	"_h264bsdFree",
+	"_h264bsdInit",
+	"_h264bsdDecode",
+	"_h264bsdShutdown",
+	"_h264bsdNextOutputPicture",
+	"_h264bsdPicWidth",
+	"_h264bsdPicHeight",
+	"_h264bsdCroppingParams",
+]
+
+exported_runtime_methods = [
+	'getValue',
+	'setValue'
+]
+
+EXPORT_FLAGS = "-s EXTRA_EXPORTED_RUNTIME_METHODS='#{JSON.generate(exported_runtime_methods)}' -s EXPORTED_FUNCTIONS='#{JSON.generate(exported_functions)}'"
+
+file "h264bsd_asm.js" => c_files do
+	sh "emcc #{c_files.join(' ')} #{CFLAGS} #{EMCC_FLAGS} #{EXPORT_FLAGS} -o h264bsd_asm.js"
+end
+
+task :clean do
+	FileUtils.rm_f("h264bsd_asm.js")
+	FileUtils.rm_f("h264bsd_asm.wasm")
+end
+
+desc "Check for prereq tools"
+task :setup do
+	sh("emcc --version") { |ok, res| fail("Can't find emscripten binaries.") unless ok }
+	puts("Ready to go")
+end
+
+task :server do
+	require 'webrick'
+	WEBrick::HTTPServer.new(:Port => 8000, :DocumentRoot => Dir.pwd).start
+end
+
+task :default => [:setup, 'h264bsd_asm.js']
